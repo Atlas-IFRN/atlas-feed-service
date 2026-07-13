@@ -1,0 +1,54 @@
+name: Deploy feed-service to production
+
+# Dispara apenas no merge/push para main (produção).
+# A branch de desenvolvimento (develop) NÃO dispara deploy.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-feed-service
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy (feed-service)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:     ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          script_stop: true
+          command_timeout: 25m
+          script: |
+            set -e
+            PROJECT_DIR="/home/production"
+            SERVICE_DIR="$PROJECT_DIR/services/feed"
+            cd "$PROJECT_DIR"
+
+            echo "==> Deploy de feed-service ($(date '+%Y-%m-%d %H:%M:%S'))"
+
+            # Primeiro deploy: clona o repositório se ainda não existir no servidor.
+            if [ ! -d "$SERVICE_DIR/.git" ]; then
+              echo "--> services/feed ausente — clonando..."
+              git clone https://github.com/Atlas-IFRN/atlas-feed-service.git "$SERVICE_DIR"
+            fi
+
+            # Produção roda a branch main: força o checkout dela.
+            echo "--> Atualizando services/feed para origin/main..."
+            git -C "$SERVICE_DIR" fetch origin main
+            git -C "$SERVICE_DIR" checkout -B main origin/main
+
+            # Rebuilda e reinicia apenas o container deste serviço.
+            echo "--> Rebuildando: feed-service"
+            docker compose up -d --build feed-service
+
+            docker image prune -f
+            echo ""
+            docker compose ps feed-service
+            echo "✓ feed-service atualizado."
