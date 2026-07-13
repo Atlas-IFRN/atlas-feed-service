@@ -178,6 +178,16 @@ MEDIA_URL = "/api/feed/static/uploads/"
 MEDIA_ROOT = BASE_DIR / "static" / "uploads"
 
 # ------------------------------------------------------------------------------
+# RESOLUÇÃO DE AUTOR (auth-service)
+# ------------------------------------------------------------------------------
+# O feed embute os dados de exibição do autor (nome/foto) em cada post/comentário,
+# resolvidos via HTTP no auth-service. O CACHE persistente mora no auth (fonte da
+# verdade, que invalida quando o usuário muda); aqui só deduplicamos por request.
+# Chamada serviço-a-serviço, fora do gateway (sem rate limit).
+AUTH_INTERNAL_URL = env("AUTH_INTERNAL_URL", default="http://auth-service:8000")
+AUTH_REQUEST_TIMEOUT = env.float("AUTH_REQUEST_TIMEOUT", default=2.0)
+
+# ------------------------------------------------------------------------------
 # DEFAULTS
 # ------------------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
