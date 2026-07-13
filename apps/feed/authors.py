@@ -74,6 +74,18 @@ def resolve_profile(author_id, request):
     return profile
 
 
+def actor_display_name(request):
+    """Nome de exibição do usuário autenticado (para mensagens de notificação).
+
+    Resolve o próprio usuário da request no auth (deduplicado/cacheado). Fail-soft:
+    devolve "" se não der, e o produtor cai para um texto genérico.
+    """
+    if request is None:
+        return ""
+    profile = resolve_profile(request.user.id, request) or {}
+    return profile.get("name") or ""
+
+
 def _role_key(role):
     normalized = (role or "").upper()
     if normalized == "SYSTEM":
