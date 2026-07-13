@@ -5,6 +5,25 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 
+class AuthorRole(models.TextChoices):
+    """Papel do autor no momento da publicação — snapshot vindo do JWT.
+
+    Guardado no próprio post (denormalizado) para permitir filtrar o feed por
+    origem (docentes, sistema) sem consultar o auth-service a cada listagem.
+    """
+
+    STUDENT = 'STUDENT', 'Estudante'
+    TEACHER = 'TEACHER', 'Professor'
+    SYSTEM = 'SYSTEM', 'Sistema'
+
+
+def post_image_upload_to(instance, filename):
+    # Salvo dentro de MEDIA_ROOT (que fica sob o diretório `static/` do serviço,
+    # servido pela rota /api/feed/static/). Namespaced por post para evitar
+    # colisão de nomes.
+    return f"posts/{instance.id}/{filename}"
+
+
 class Post(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -13,10 +32,29 @@ class Post(models.Model):
     # (nome/role/avatar/badge) são resolvidos via auth-service pelo frontend.
     author_id = models.UUIDField(db_index=True)
 
+    # Papel do autor no momento da publicação (snapshot do claim `role`/`is_staff`
+    # do token). Permite filtrar o feed por "docentes"/"sistema" no servidor.
+    author_role = models.CharField(
+        max_length=10,
+        choices=AuthorRole.choices,
+        default=AuthorRole.STUDENT,
+        db_index=True,
+    )
+
+    # Post fixado por um docente — sobe para o topo do feed "principal".
+    # Só professores/staff podem alternar (regra aplicada na view).
+    is_fixed = models.BooleanField(default=False, db_index=True)
+
     # Texto do post (suporta #hashtags/@menções — o parse fica no cliente).
     content = models.TextField(blank=True)
 
-    # Mídia por URL (sem upload gerenciado): {src, alt, tone, caption}.
+    # Imagem anexada, salva no armazenamento do serviço (sob static/uploads).
+    # Opcional: um post pode ter só texto, só link, etc.
+    image = models.ImageField(upload_to=post_image_upload_to, null=True, blank=True)
+
+    # Metadados da mídia (alt/tom/legenda): {alt, tone, caption}. Quando há
+    # `image`, o cliente monta `src` a partir da URL da imagem; este bloco
+    # complementa com texto alternativo e legenda. Também aceita `src` externo.
     media = models.JSONField(null=True, blank=True)
 
     # Link externo compartilhado OU embed de conteúdo interno (trilha/módulo/
@@ -35,9 +73,10 @@ class Post(models.Model):
 
     def clean(self):
         # Um post não pode ser completamente vazio: precisa de ao menos texto,
-        # mídia ou um embed/link.
-        if not (self.content or '').strip() and not self.media and not self.embed_link:
-            raise ValidationError(_('Um post precisa de texto, mídia ou um embed/link.'))
+        # imagem, mídia ou um embed/link.
+        has_media = bool(self.image) or bool(self.media)
+        if not (self.content or '').strip() and not has_media and not self.embed_link:
+            raise ValidationError(_('Um post precisa de texto, imagem, mídia ou um embed/link.'))
 
     def __str__(self):
         return f"Post({self.id}) by {self.author_id}"

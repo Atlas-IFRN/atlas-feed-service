@@ -28,6 +28,11 @@ class AtlasTokenUser(TokenUser):
     def email(self):
         return self.token.get("email", "")
 
+    @property
+    def is_staff(self):
+        # Claim opcional (tokens antigos não o têm) — default False.
+        return bool(self.token.get("is_staff", False))
+
 
 class AtlasJWTAuthentication(JWTStatelessUserAuthentication):
     """Autenticação JWT stateless — não consulta banco nem o auth-service."""

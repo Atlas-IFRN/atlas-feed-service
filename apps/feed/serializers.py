@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from .authors import build_author
 from .models import Comment, Post
 
 
@@ -8,6 +9,24 @@ def _current_user_id(context):
     if request and request.user and request.user.is_authenticated:
         return request.user.id
     return None
+
+
+class _AuthorMixin(serializers.ModelSerializer):
+    """Expõe `author`: {id, name, image, role, badge} resolvido no auth-service
+    (que cacheia e invalida por conta própria). Evita que o cliente faça N
+    chamadas ao auth."""
+
+    author = serializers.SerializerMethodField()
+
+    # Subclasses de post passam o papel snapshot; comentários deixam None.
+    author_role_source = None
+
+    def get_author(self, obj):
+        author_role = (
+            getattr(obj, self.author_role_source) if self.author_role_source else None
+        )
+        request = self.context.get('request') if self.context else None
+        return build_author(obj.author_id, request, author_role)
 
 
 class _CountsMixin(serializers.ModelSerializer):
@@ -36,25 +55,25 @@ class _CountsMixin(serializers.ModelSerializer):
         return obj.likes.filter(user_id=user_id).exists()
 
 
-class CommentReplySerializer(_CountsMixin):
+class CommentReplySerializer(_AuthorMixin, _CountsMixin):
     """Reply de 1 nível — nunca serializa `replies` (não há aninhamento além disso)."""
 
     class Meta:
         model = Comment
         fields = [
-            'id', 'post', 'parent', 'author_id', 'content',
+            'id', 'post', 'parent', 'author_id', 'author', 'content',
             'likes_count', 'liked', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'post', 'parent', 'author_id', 'created_at', 'updated_at']
 
 
-class CommentSerializer(_CountsMixin):
+class CommentSerializer(_AuthorMixin, _CountsMixin):
     replies = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
         fields = [
-            'id', 'post', 'parent', 'author_id', 'content',
+            'id', 'post', 'parent', 'author_id', 'author', 'content',
             'likes_count', 'liked', 'replies', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'post', 'author_id', 'created_at', 'updated_at']
@@ -84,17 +103,26 @@ class CommentSerializer(_CountsMixin):
         return parent
 
 
-class PostSerializer(_CountsMixin):
+class PostSerializer(_AuthorMixin, _CountsMixin):
     comments_count = serializers.SerializerMethodField()
+    # Aceita upload de imagem (multipart) na escrita e devolve a URL absoluta na
+    # leitura. `use_url=True` faz o DRF resolver via request.build_absolute_uri.
+    image = serializers.ImageField(required=False, allow_null=True, use_url=True)
+
+    # Papel snapshot do post alimenta o rótulo do autor (Estudante/Docente/Sistema).
+    author_role_source = 'author_role'
 
     class Meta:
         model = Post
         fields = [
-            'id', 'author_id', 'content', 'media', 'embed_link',
-            'likes_count', 'comments_count', 'liked',
+            'id', 'author_id', 'author_role', 'author', 'content', 'image',
+            'media', 'embed_link', 'is_fixed', 'likes_count', 'comments_count',
+            'liked', 'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'author_id', 'author_role', 'is_fixed',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'author_id', 'created_at', 'updated_at']
 
     def get_comments_count(self, obj):
         annotated = getattr(obj, 'comments_count', None)
@@ -112,11 +140,12 @@ class PostSerializer(_CountsMixin):
             return getattr(instance, field, None)
 
         content = resolve('content')
+        image = resolve('image')
         media = resolve('media')
         embed_link = resolve('embed_link')
 
-        if not (content or '').strip() and not media and not embed_link:
+        if not (content or '').strip() and not image and not media and not embed_link:
             raise serializers.ValidationError(
-                'Um post precisa de texto, mídia ou um embed/link.'
+                'Um post precisa de texto, imagem, mídia ou um embed/link.'
             )
         return attrs
