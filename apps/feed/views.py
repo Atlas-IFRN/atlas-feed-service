@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Comment, CommentLike, Post, PostLike
+from .models import AuthorRole, Comment, CommentLike, Post, PostLike
 from .notifications import (
     notify_comment_liked,
     notify_comment_replied,
@@ -43,10 +43,10 @@ class PostViewSet(viewsets.ModelViewSet):
     serializer_class = PostSerializer
     permission_classes = [IsAuthenticated, IsAuthorOrReadOnly]
     pagination_class = FeedPagination
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    # A ordenação é resolvida em get_queryset (param `sort` + fixados no topo);
+    # não usamos OrderingFilter porque ele sobrescreveria esse order_by.
+    filter_backends = [filters.SearchFilter]
     search_fields = ['content']
-    ordering_fields = ['created_at']
-    ordering = ['-created_at']
 
     def get_queryset(self):
         user_id = self.request.user.id
@@ -58,10 +58,41 @@ class PostViewSet(viewsets.ModelViewSet):
         author_id = self.request.query_params.get('author_id')
         if author_id:
             queryset = queryset.filter(author_id=author_id)
+
+        # Filtro por origem do post (feed "docentes" / "sistema").
+        author_role = self.request.query_params.get('author_role')
+        if author_role:
+            queryset = queryset.filter(author_role=author_role.upper())
+
+        # Ordenação:
+        #   - sort=likes  → "mais curtidos" (mais likes primeiro).
+        #   - padrão      → "principal": posts fixados no topo, depois recentes.
+        sort = self.request.query_params.get('sort')
+        if sort == 'likes':
+            queryset = queryset.order_by('-likes_count', '-created_at')
+        else:
+            queryset = queryset.order_by('-is_fixed', '-created_at')
         return queryset
 
+    def _resolve_author_role(self):
+        """Deriva o papel do autor a partir dos claims do token.
+
+        Staff/admin publica em nome do sistema (ATLAS); professores e alunos
+        publicam com seu próprio papel. É um snapshot: mudanças posteriores no
+        auth-service não reescrevem posts já publicados.
+        """
+        user = self.request.user
+        if getattr(user, 'is_staff', False):
+            return AuthorRole.SYSTEM
+        if (getattr(user, 'role', '') or '').upper() == AuthorRole.TEACHER:
+            return AuthorRole.TEACHER
+        return AuthorRole.STUDENT
+
     def perform_create(self, serializer):
-        serializer.save(author_id=self.request.user.id)
+        serializer.save(
+            author_id=self.request.user.id,
+            author_role=self._resolve_author_role(),
+        )
 
     def _serialized_post(self, pk):
         """Recarrega o post já anotado para devolver contadores atualizados."""
@@ -75,6 +106,25 @@ class PostViewSet(viewsets.ModelViewSet):
         data = self._serialized_post(serializer.instance.pk)
         headers = self.get_success_headers(data)
         return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @staticmethod
+    def _can_fix(user):
+        """Só docentes (ou staff/admin) podem fixar/desafixar posts."""
+        return (getattr(user, 'role', '') or '').upper() == AuthorRole.TEACHER or \
+            getattr(user, 'is_staff', False)
+
+    @action(detail=True, methods=['post', 'delete'])
+    def fix(self, request, pk=None):
+        """Fixa (POST) ou desafixa (DELETE) um post. Exclusivo de docentes."""
+        if not self._can_fix(request.user):
+            return Response(
+                {'detail': 'Apenas docentes podem fixar publicações.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        post = self.get_object()
+        post.is_fixed = request.method == 'POST'
+        post.save(update_fields=['is_fixed', 'updated_at'])
+        return Response(self._serialized_post(post.pk), status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post', 'delete'])
     def like(self, request, pk=None):

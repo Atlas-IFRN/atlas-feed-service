@@ -162,9 +162,20 @@ USE_I18N = True
 USE_TZ = True
 
 # ------------------------------------------------------------------------------
-# STATIC FILES
+# STATIC & MEDIA FILES
 # ------------------------------------------------------------------------------
 STATIC_URL = "/api/feed/static/"
+
+# Imagens anexadas aos posts são guardadas DENTRO do diretório `static/` do
+# serviço (subpasta `uploads/`). Assim são servidas pela mesma rota pública
+# /api/feed/static/ que o Nginx já roteia para o feed-service — sem exigir uma
+# rota nova nem atravessar a barreira de JWT (imagens em <img> não mandam
+# Authorization). Em dev (runserver + DEBUG=True) o handler de staticfiles serve
+# arquivos escritos em STATICFILES_DIRS em tempo de execução.
+STATICFILES_DIRS = [BASE_DIR / "static"]
+
+MEDIA_URL = "/api/feed/static/uploads/"
+MEDIA_ROOT = BASE_DIR / "static" / "uploads"
 
 # ------------------------------------------------------------------------------
 # DEFAULTS
