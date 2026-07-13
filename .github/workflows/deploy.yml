@@ -48,6 +48,13 @@ jobs:
             echo "--> Rebuildando: feed-service"
             docker compose up -d --build feed-service
 
+            # Recarrega o nginx para re-resolver o upstream. O container recriado
+            # ganha um IP novo na rede docker; sem reload, o nginx (upstream
+            # estático, resolvido no load da config) segue apontando para o IP
+            # antigo e a rota /api/feed/ responde 502. Reload é gracioso.
+            echo "--> Recarregando nginx (re-resolve upstream do feed)"
+            docker compose exec -T nginx nginx -s reload || true
+
             docker image prune -f
             echo ""
             docker compose ps feed-service
