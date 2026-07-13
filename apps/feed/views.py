@@ -5,6 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from .authors import actor_display_name
 from .models import AuthorRole, Comment, CommentLike, Post, PostLike
 from .notifications import (
     notify_comment_liked,
@@ -152,11 +153,19 @@ class PostViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             comment = serializer.save(post=post, author_id=user_id)
             # Reply notifica o autor do comentário pai; comentário de topo
-            # notifica o autor do post.
+            # notifica o autor do post. Resolve o nome do ator aqui (com a
+            # request disponível) para a mensagem "Fulano comentou…".
+            actor_name = actor_display_name(request)
+            content = comment.content
             if comment.parent_id:
-                transaction.on_commit(lambda: notify_comment_replied(comment.parent, user_id))
+                parent = comment.parent
+                transaction.on_commit(
+                    lambda: notify_comment_replied(parent, user_id, actor_name, content)
+                )
             else:
-                transaction.on_commit(lambda: notify_post_commented(post, user_id))
+                transaction.on_commit(
+                    lambda: notify_post_commented(post, user_id, actor_name, content)
+                )
             out = annotate_comments(Comment.objects.filter(pk=comment.pk), user_id).first()
             return Response(
                 CommentSerializer(out, context={'request': request}).data,
