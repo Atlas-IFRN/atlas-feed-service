@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Comment, CommentLike, Post, PostLike
+from .models import Banner, Comment, CommentLike, Post, PostLike
 
 
 @admin.register(Post)
@@ -16,6 +16,14 @@ class CommentAdmin(admin.ModelAdmin):
     list_display = ('id', 'post', 'author_id', 'parent', 'created_at')
     list_filter = ('created_at',)
     search_fields = ('id', 'author_id', 'content')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+
+
+@admin.register(Banner)
+class BannerAdmin(admin.ModelAdmin):
+    list_display = ('id', 'title', 'type', 'is_active', 'order', 'created_by', 'created_at')
+    list_filter = ('type', 'is_active')
+    search_fields = ('id', 'title', 'created_by')
     readonly_fields = ('id', 'created_at', 'updated_at')
 
 

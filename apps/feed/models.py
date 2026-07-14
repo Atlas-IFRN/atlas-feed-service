@@ -82,6 +82,52 @@ class Post(models.Model):
         return f"Post({self.id}) by {self.author_id}"
 
 
+class BannerType(models.TextChoices):
+    """Origem/categoria do banner — define o tema visual no front."""
+
+    COMUNICADO_IFRN = 'COMUNICADO_IFRN', 'Comunicado IFRN'
+    SISTEMA = 'SISTEMA', 'Sistema'
+
+
+class Banner(models.Model):
+    """Banner de destaque no topo do feed (carrossel), gerenciado por docentes.
+
+    O primeiro slide do carrossel (boas-vindas) é estático e vive só no
+    front; este model cobre os demais banners (comunicados, avisos etc.),
+    que podem ser criados/editados/removidos por professores via API.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    type = models.CharField(max_length=20, choices=BannerType.choices)
+    title = models.CharField(max_length=200)
+    subtitle = models.CharField(max_length=300, blank=True)
+    primary_button_text = models.CharField(max_length=60, blank=True)
+    primary_button_link = models.CharField(max_length=300, blank=True)
+    secondary_button_text = models.CharField(max_length=60, blank=True)
+    secondary_button_link = models.CharField(max_length=300, blank=True)
+
+    # Permite ocultar sem apagar (histórico) e controlar a ordem no carrossel.
+    is_active = models.BooleanField(default=True, db_index=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+
+    # Professor (ou staff/admin) que criou o banner — snapshot do id do token,
+    # sem FK entre schemas/serviços (mesmo padrão de `Post.author_id`).
+    created_by = models.UUIDField()
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', '-created_at']
+        indexes = [
+            models.Index(fields=['order']),
+        ]
+
+    def __str__(self):
+        return f"Banner({self.id}) {self.title}"
+
+
 class Comment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='comments')

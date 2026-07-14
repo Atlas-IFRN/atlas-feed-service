@@ -6,15 +6,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .authors import actor_display_name, resolve_user_id
-from .models import AuthorRole, Comment, CommentLike, Post, PostLike
+from .cache import get_cached_active_banners, set_cached_active_banners
+from .models import AuthorRole, Banner, Comment, CommentLike, Post, PostLike
 from .notifications import (
     notify_comment_liked,
     notify_comment_replied,
     notify_post_commented,
     notify_post_liked,
 )
-from .permissions import IsAuthorOrReadOnly
-from .serializers import CommentSerializer, PostSerializer
+from .permissions import IsAuthorOrReadOnly, IsTeacherOrReadOnly, is_teacher
+from .serializers import BannerSerializer, CommentSerializer, PostSerializer
 
 
 def annotate_comments(queryset, user_id):
@@ -131,16 +132,10 @@ class PostViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-    @staticmethod
-    def _can_fix(user):
-        """Só docentes (ou staff/admin) podem fixar/desafixar posts."""
-        return (getattr(user, 'role', '') or '').upper() == AuthorRole.TEACHER or \
-            getattr(user, 'is_staff', False)
-
     @action(detail=True, methods=['post', 'delete'])
     def fix(self, request, pk=None):
         """Fixa (POST) ou desafixa (DELETE) um post. Exclusivo de docentes."""
-        if not self._can_fix(request.user):
+        if not is_teacher(request.user):
             return Response(
                 {'detail': 'Apenas docentes podem fixar publicações.'},
                 status=status.HTTP_403_FORBIDDEN,
@@ -205,6 +200,55 @@ class PostViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(top_level)
         serializer = CommentSerializer(page, many=True, context={'request': request})
         return self.get_paginated_response(serializer.data)
+
+
+class BannerViewSet(viewsets.ModelViewSet):
+    """
+    CRUD de banners do carrossel do feed.
+
+    - list/retrieve: qualquer autenticado vê os banners ativos, ordenados.
+      Docentes/staff podem passar `?all=true` para ver também os inativos
+      (usado pelo modal de gestão).
+    - create/update/destroy: exclusivo de docentes/staff (IsTeacherOrReadOnly).
+    """
+
+    serializer_class = BannerSerializer
+    permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
+    pagination_class = None
+
+    def _wants_all(self):
+        """Docente/staff pedindo a visão de gestão (inclui banners inativos)."""
+        return self.request.query_params.get('all') == 'true' and is_teacher(self.request.user)
+
+    def get_queryset(self):
+        queryset = Banner.objects.all()
+        # O filtro de "só ativos" vale para a listagem pública do carrossel.
+        # Ações de detalhe (retrieve/update/destroy) sempre enxergam qualquer
+        # banner — senão um professor não conseguiria reativar/editar/excluir
+        # um banner que ele mesmo desativou.
+        if self.action != 'list':
+            return queryset
+        if not self._wants_all():
+            queryset = queryset.filter(is_active=True)
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        # A visão de gestão (?all=true) precisa ser sempre fresca: o docente tem
+        # que ver o efeito imediato das próprias edições. Só a listagem PÚBLICA
+        # (banners ativos), idêntica para todo mundo, passa pelo cache.
+        if self._wants_all():
+            return super().list(request, *args, **kwargs)
+
+        cached = get_cached_active_banners()
+        if cached is not None:
+            return Response(cached)
+
+        response = super().list(request, *args, **kwargs)
+        set_cached_active_banners(response.data)
+        return response
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user.id)
 
 
 class CommentViewSet(

@@ -20,3 +20,20 @@ class IsAuthorOrReadOnly(BasePermission):
         if getattr(view, 'action', None) in ('update', 'partial_update', 'destroy'):
             return str(obj.author_id) == str(request.user.id)
         return True
+
+
+def is_teacher(user):
+    """Só docentes (ou staff/admin) — mesma regra usada para fixar posts."""
+    return (getattr(user, 'role', '') or '').upper() == 'TEACHER' or \
+        getattr(user, 'is_staff', False)
+
+
+class IsTeacherOrReadOnly(BasePermission):
+    """Leitura liberada para qualquer autenticado; escrita só para docentes/staff."""
+
+    message = "Apenas docentes podem gerenciar banners."
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return is_teacher(request.user)
