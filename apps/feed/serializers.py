@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .authors import build_author
-from .models import Comment, Post
+from .models import Banner, Comment, Post
 
 
 def _current_user_id(context):
@@ -149,3 +149,15 @@ class PostSerializer(_AuthorMixin, _CountsMixin):
                 'Um post precisa de texto, imagem, mídia ou um embed/link.'
             )
         return attrs
+
+
+class BannerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Banner
+        fields = [
+            'id', 'type', 'title', 'subtitle',
+            'primary_button_text', 'primary_button_link',
+            'secondary_button_text', 'secondary_button_link',
+            'is_active', 'order', 'created_by', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
