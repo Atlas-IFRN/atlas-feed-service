@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .authors import actor_display_name, resolve_user_id
+from .cache import get_cached_active_banners, set_cached_active_banners
 from .models import AuthorRole, Banner, Comment, CommentLike, Post, PostLike
 from .notifications import (
     notify_comment_liked,
@@ -215,6 +216,10 @@ class BannerViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
     pagination_class = None
 
+    def _wants_all(self):
+        """Docente/staff pedindo a visão de gestão (inclui banners inativos)."""
+        return self.request.query_params.get('all') == 'true' and is_teacher(self.request.user)
+
     def get_queryset(self):
         queryset = Banner.objects.all()
         # O filtro de "só ativos" vale para a listagem pública do carrossel.
@@ -223,10 +228,24 @@ class BannerViewSet(viewsets.ModelViewSet):
         # um banner que ele mesmo desativou.
         if self.action != 'list':
             return queryset
-        show_all = self.request.query_params.get('all') == 'true'
-        if not (show_all and is_teacher(self.request.user)):
+        if not self._wants_all():
             queryset = queryset.filter(is_active=True)
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        # A visão de gestão (?all=true) precisa ser sempre fresca: o docente tem
+        # que ver o efeito imediato das próprias edições. Só a listagem PÚBLICA
+        # (banners ativos), idêntica para todo mundo, passa pelo cache.
+        if self._wants_all():
+            return super().list(request, *args, **kwargs)
+
+        cached = get_cached_active_banners()
+        if cached is not None:
+            return Response(cached)
+
+        response = super().list(request, *args, **kwargs)
+        set_cached_active_banners(response.data)
+        return response
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user.id)

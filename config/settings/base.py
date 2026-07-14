@@ -178,6 +178,20 @@ MEDIA_URL = "/api/feed/static/uploads/"
 MEDIA_ROOT = BASE_DIR / "static" / "uploads"
 
 # ------------------------------------------------------------------------------
+# CACHE
+# ------------------------------------------------------------------------------
+# Cache local ao processo. O feed roda um único processo `runserver`, então o
+# LocMemCache basta para guardar a listagem pública de banners do carrossel.
+# A atualização acontece por invalidação (signals em apps/feed/cache.py), não
+# por expiração — o TTL é só uma rede de segurança.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'feed-local-cache',
+    }
+}
+
+# ------------------------------------------------------------------------------
 # RESOLUÇÃO DE AUTOR (auth-service)
 # ------------------------------------------------------------------------------
 # O feed embute os dados de exibição do autor (nome/foto) em cada post/comentário,
