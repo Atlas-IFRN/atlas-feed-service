@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .authors import actor_display_name
+from .authors import actor_display_name, resolve_user_id
 from .models import AuthorRole, Comment, CommentLike, Post, PostLike
 from .notifications import (
     notify_comment_liked,
@@ -107,6 +107,29 @@ class PostViewSet(viewsets.ModelViewSet):
         data = self._serialized_post(serializer.instance.pk)
         headers = self.get_success_headers(data)
         return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=False, methods=['get'], url_path=r'by-user/(?P<matricula>[^/]+)')
+    def by_user(self, request, matricula=None):
+        """Lista os posts de um usuário específico, resolvido pela matrícula.
+
+        Mesmo formato/paginação/ordenação da listagem do feed (home) — reusa
+        `get_queryset` e o `PostSerializer`. A matrícula é resolvida para o UUID
+        do autor no auth-service; responde 404 se o usuário não existir.
+        Aceita os mesmos params opcionais da listagem (ex.: `sort=likes`, `page`).
+        """
+        author_id = resolve_user_id(matricula, request)
+        if not author_id:
+            return Response(
+                {'detail': 'Usuário não encontrado.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        queryset = self.filter_queryset(self.get_queryset()).filter(author_id=author_id)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     @staticmethod
     def _can_fix(user):
