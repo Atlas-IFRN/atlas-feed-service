@@ -76,6 +76,30 @@ def resolve_profile(author_id, request):
     return profile
 
 
+def resolve_user_id(matricula, request):
+    """Resolve uma matrícula (ou id) para o UUID do usuário via auth-service.
+
+    O feed guarda apenas `author_id` (UUID); a matrícula vive no auth. O mesmo
+    endpoint que resolve o perfil aceita matrícula OU id — aqui aproveitamos o
+    campo `id` da resposta. Fail-soft: devolve None se o auth estiver fora ou
+    não encontrar o usuário.
+    """
+    lookup = str(matricula or "").strip()
+    if not lookup:
+        return None
+    url = f"{settings.AUTH_INTERNAL_URL}/api/auth/users/{lookup}/"
+    token = request.META.get("HTTP_AUTHORIZATION", "") if request is not None else ""
+    headers = {"Authorization": token or "", "Host": "localhost"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=settings.AUTH_REQUEST_TIMEOUT)
+    except requests.RequestException as exc:
+        logger.warning("Falha ao resolver matrícula %s: %s", lookup, exc)
+        return None
+    if resp.status_code != 200:
+        return None
+    return resp.json().get("id")
+
+
 def actor_display_name(request):
     """Nome de exibição do usuário autenticado (para mensagens de notificação).
 
