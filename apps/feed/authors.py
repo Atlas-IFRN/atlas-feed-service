@@ -43,7 +43,9 @@ def _fetch_profile(author_id, token):
         return None
     data = resp.json()
     return {
-        "name": data.get("full_name") or data.get("first_name") or "",
+        # Exibe o primeiro nome (mesmo critério do cabeçalho no front); cai para
+        # o nome completo só se o auth não tiver first_name.
+        "name": data.get("first_name") or data.get("full_name") or "",
         "image": data.get("image") or None,
         "role": (data.get("role") or "STUDENT"),
         # Matrícula é a chave usada na rota de perfil (/perfil/{matricula}).
