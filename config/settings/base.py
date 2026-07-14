@@ -162,9 +162,30 @@ USE_I18N = True
 USE_TZ = True
 
 # ------------------------------------------------------------------------------
-# STATIC FILES
+# STATIC & MEDIA FILES
 # ------------------------------------------------------------------------------
 STATIC_URL = "/api/feed/static/"
+
+# Imagens anexadas aos posts são guardadas DENTRO do diretório `static/` do
+# serviço (subpasta `uploads/`). Assim são servidas pela mesma rota pública
+# /api/feed/static/ que o Nginx já roteia para o feed-service — sem exigir uma
+# rota nova nem atravessar a barreira de JWT (imagens em <img> não mandam
+# Authorization). Em dev (runserver + DEBUG=True) o handler de staticfiles serve
+# arquivos escritos em STATICFILES_DIRS em tempo de execução.
+STATICFILES_DIRS = [BASE_DIR / "static"]
+
+MEDIA_URL = "/api/feed/static/uploads/"
+MEDIA_ROOT = BASE_DIR / "static" / "uploads"
+
+# ------------------------------------------------------------------------------
+# RESOLUÇÃO DE AUTOR (auth-service)
+# ------------------------------------------------------------------------------
+# O feed embute os dados de exibição do autor (nome/foto) em cada post/comentário,
+# resolvidos via HTTP no auth-service. O CACHE persistente mora no auth (fonte da
+# verdade, que invalida quando o usuário muda); aqui só deduplicamos por request.
+# Chamada serviço-a-serviço, fora do gateway (sem rate limit).
+AUTH_INTERNAL_URL = env("AUTH_INTERNAL_URL", default="http://auth-service:8000")
+AUTH_REQUEST_TIMEOUT = env.float("AUTH_REQUEST_TIMEOUT", default=2.0)
 
 # ------------------------------------------------------------------------------
 # DEFAULTS
