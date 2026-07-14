@@ -25,5 +25,9 @@ PY
 echo "==> Running database migrations..."
 python manage.py migrate --noinput
 
+# --nostatic desativa o StaticFilesHandler do runserver. Sem isso, com
+# DEBUG=True o Django recusa iniciar ("runserver can't serve media if MEDIA_URL
+# is within STATIC_URL"), pois as imagens dos posts ficam sob /api/feed/static/.
+# Os uploads seguem servidos pela rota de MEDIA em config/urls.py.
 echo "==> Starting Django dev server on :8000..."
-exec python manage.py runserver 0.0.0.0:8000
+exec python manage.py runserver 0.0.0.0:8000 --nostatic
