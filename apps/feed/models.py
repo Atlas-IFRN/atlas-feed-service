@@ -195,3 +195,44 @@ class CommentLike(models.Model):
 
     def __str__(self):
         return f"CommentLike(comment={self.comment_id}, user={self.user_id})"
+
+
+class AuditAction(models.TextChoices):
+    CREATE = 'CREATE', _('Create')
+    UPDATE = 'UPDATE', _('Update')
+    DELETE = 'DELETE', _('Delete')
+
+
+class AuditLogTable(models.TextChoices):
+    POST = 'post', _('Post')
+    BANNER = 'banner', _('Banner')
+    COMMENT = 'comment', _('Comment')
+    POST_LIKE = 'post_like', _('Post Like')
+    COMMENT_LIKE = 'comment_like', _('Comment Like')
+
+
+class AuditLog(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    table_name = models.CharField(max_length=100, choices=AuditLogTable.choices)
+    action = models.CharField(max_length=10, choices=AuditAction.choices)
+    record_id = models.UUIDField(help_text='PK do registro afetado')
+    user_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='UUID do usuário responsável pela operação',
+    )
+    payload = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Audit Log'
+        verbose_name_plural = 'Audit Logs'
+        indexes = [
+            models.Index(fields=['user_id', '-created_at'], name='feed_audit_user_time_idx'),
+            models.Index(fields=['-created_at'], name='feed_audit_created_idx'),
+        ]
+
+    def __str__(self):
+        return f'[{self.action}] {self.table_name} ({self.record_id})'
