@@ -1,41 +1,80 @@
-# atlas-feed-service
+# Atlas · Feed Service 📣
 
-Microsserviço de **feed**: postagens de usuários, comentários (1 nível de reply) e curtidas. Django + DRF, mesmo esqueleto dos demais serviços Atlas. Exposto sob `/api/feed/` com barreira JWT no gateway.
+> Parte do **Projeto Atlas** — plataforma acadêmica desenvolvida para o **IFRN Campus Pau dos Ferros** como Projeto Integrador de Sistemas Distribuídos. O Atlas conecta alunos a trilhas de conhecimento e bolsas, com avaliação automática de código por IA.
 
-## Escopo (MVP)
+Microsserviço responsável pelo **feed institucional**: publicações, comentários, curtidas e banners. É o mural social da plataforma.
 
-- **Posts** — CRUD. Campos: `content` (texto), `media` (JSON `{src, alt, tone, caption}`, mídia **por URL**) e `embed_link` (JSON — link externo compartilhado OU embed de conteúdo interno). O post não pode ser totalmente vazio (precisa de texto, mídia ou embed/link).
-- **Comentários** — em posts, com **replies de 1 nível** (estilo LinkedIn/Twitter).
-- **Curtidas** — em posts e comentários, idempotentes (`UniqueConstraint(alvo, user_id)`).
-- **Autor** — guardamos só `author_id` (UUID do auth-service). Nome/avatar/role/badge são resolvidos pelo frontend via auth-service (sem FK cross-schema).
-- **Notificações** — ao curtir/comentar/responder, o feed **publica** o evento `notifications.create` na fila do notification-service (produtor-only, sem worker; best-effort). Não notifica o próprio autor da interação; curtida repetida não duplica evento. Tipos enviados (para o front mapear o ícone): `feed_like` (curtidas) e `feed_comment` (comentários/respostas). O enum completo do notification-service é `feed_like | feed_comment | track | scholarship | system`.
+## O que este serviço faz
 
-Contadores (`likes_count`, `comments_count`) e o flag `liked` do usuário atual são **derivados** por anotação no queryset (não há colunas denormalizadas).
+- **Posts:** publicações com autor e papel (`AuthorRole`), incluindo upload de imagens.
+- **Interações:** comentários (`Comment`) e curtidas em posts e comentários (`PostLike`, `CommentLike`).
+- **Banners:** banners tipados para destaques na interface (`Banner`, `BannerType`).
+- **Notificações:** ao ocorrer interações (curtidas/comentários), **publica** o evento `notifications.create` no RabbitMQ (produtor apenas — não roda worker).
+- **Auditoria:** modelo `AuditLog` com registro automático e endpoint de consulta.
 
-## Endpoints (`/api/feed/`)
+## Stack
 
-| Método | Rota | Descrição |
-|---|---|---|
-| GET/POST | `posts/` | Listar (paginado, `-created_at`, filtro `?author_id=`, busca `?search=`) / criar |
-| GET/PATCH/DELETE | `posts/{id}/` | Detalhe / editar / apagar (apenas o autor) |
-| POST/DELETE | `posts/{id}/like/` | Curtir / descurtir |
-| GET/POST | `posts/{id}/comments/` | Listar comentários (com `replies`) / comentar (aceita `parent`) |
-| POST/DELETE | `comments/{id}/like/` | Curtir / descurtir comentário |
-| GET/PATCH/DELETE | `comments/{id}/` | Detalhe / editar / apagar (apenas o autor) |
-| — | `health/`, `schema/`, `docs/`, `admin/` | Saúde, OpenAPI, Swagger, admin |
+- Python · Django · Django REST Framework
+- PostgreSQL 16 (schema `feed`) · Redis · RabbitMQ (Celery, apenas produtor)
+- Armazenamento de mídia em `static/uploads`
+- Gunicorn · Docker · drf-spectacular (Swagger)
 
-## Banco
+## Como se encaixa no Atlas
 
-Schema **`feed`** no Postgres compartilhado `atlas` (isolamento por `search_path`). Tabelas: `post`, `comment` (self-FK `parent`), `post_like`, `comment_like`.
+| Repositório | Responsabilidade |
+|---|---|
+| atlas-auth-service | Identidade: SUAP OAuth2, JWT, perfis de usuário |
+| atlas-track-service | Trilhas, módulos, conteúdos, progresso e submissão de desafios |
+| atlas-scholarship-service | Bolsas, candidaturas, banco de talentos e notas |
+| **atlas-feed-service** | **Feed institucional: posts, comentários, curtidas e banners** |
+| atlas-notification-service | Notificações (consumidor central via RabbitMQ) |
+| atlas-ai-service | Avaliação de repositórios GitHub por LLM local (Ollama) |
+| atlas-frontend | SPA React + TypeScript (aluno e professor) |
+| atlas-infra | Docker Compose, Nginx (gateway), Postgres/Redis/RabbitMQ, deploy e backup |
+| atlas-observability | Prometheus + Grafana (métricas dos serviços) |
 
-## Rodar local
+**Autenticação:** o Nginx valida o JWT na borda e injeta `X-User-Id` / `X-User-Role`; o serviço também valida o token localmente (SimpleJWT *stateless*). Dados de perfil vêm da API HTTP interna do auth-service — sem acesso direto a schema alheio.
 
-```bash
-python -m venv .venv && source .venv/Scripts/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env      # ajuste DATABASE_URL (ou deixe cair no SQLite de dev)
-python manage.py migrate
-python manage.py runserver 0.0.0.0:8000
+## Domínio (models principais)
+
+`Post` · `Banner` · `Comment` · `PostLike` · `CommentLike` · `AuditLog`
+
+## Principais endpoints (`/api/feed/`)
+
+Router DRF: `posts/` · `comments/` · `banners/` · `audit-logs/`. Documentação em `api/feed/docs/`.
+
+## Estrutura
+
+```
+apps/feed/   models, views (ViewSets), serializers, services, tasks, audit
+config/      settings (base/local/production), urls, celery, authentication
+static/uploads/   mídia dos posts
 ```
 
-Em Docker, o `entrypoint.sh` cria o schema `feed` e migra automaticamente no boot.
+## Executando localmente
+
+> Orquestrado pelo repositório central: **[Atlas-IFRN/atlas-infra](https://github.com/Atlas-IFRN/atlas-infra)**.
+
+```bash
+git clone https://github.com/Atlas-IFRN/atlas-infra
+cd atlas-infra && docker compose -f docker-compose.dev.yml up -d
+
+cp .env.example .env
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver 8000
+```
+
+## Variáveis de ambiente
+
+Baseie seu `.env` no `.env.example`. Principais: `DJANGO_SECRET_KEY` (compartilhada — valida o JWT), `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `AUTH_SERVICE_URL`.
+
+## Observabilidade & Auditoria
+
+- **Métricas:** `/metrics` (django-prometheus), coletado pelo [atlas-observability](https://github.com/Atlas-IFRN/atlas-observability).
+- **Auditoria:** `AuditLog` registra operações com `user_id` e timestamp, consultáveis em `audit-logs/`.
+
+## CI/CD
+
+Workflows de GitHub Actions em `.github/workflows/`.
