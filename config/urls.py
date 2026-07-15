@@ -14,6 +14,9 @@ urlpatterns = [
     path('api/feed/admin/', admin.site.urls),
     path('health/', health_check),
 
+    # Endpoint /metrics para o Prometheus (django-prometheus).
+    path('', include('django_prometheus.urls')),
+
     # Rotas públicas (exigem JWT)
     path('api/feed/', include('apps.feed.urls')),
 
