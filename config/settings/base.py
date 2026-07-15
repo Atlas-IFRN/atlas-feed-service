@@ -62,12 +62,17 @@ INSTALLED_APPS = [
 
     # biblioteca responsável por gerar a documentação Swagger da API
     'drf_spectacular',
+
+    # Exporta métricas em /metrics para o Prometheus (atlas-observability).
+    'django_prometheus',
 ]
 
 # ------------------------------------------------------------------------------
 # MIDDLEWARE
 # ------------------------------------------------------------------------------
 MIDDLEWARE = [
+    # django-prometheus: PRIMEIRO middleware (mede a request inteira).
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -75,6 +80,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # django-prometheus: ÚLTIMO middleware.
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
