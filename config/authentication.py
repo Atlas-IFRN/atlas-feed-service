@@ -1,38 +1,32 @@
-"""
-Autenticação stateless via JWT no cabeçalho Authorization.
+"""Autenticação stateless pelo JWT emitido pelo Auth Service."""
 
-O token é assinado pelo auth-service e validado localmente (mesma SIGNING_KEY,
-compartilhada via DJANGO_SECRET_KEY no .env) — sem nenhuma chamada de rede ao
-auth. Os claims `role`/`email` viajam dentro do próprio token.
-
-Usa o fluxo tradicional do DRF: popula `request.user` com um usuário derivado
-do token, de modo que `request.user.is_authenticated` e `request.user.role`
-funcionam nas views e permissions.
-"""
 from rest_framework_simplejwt.authentication import JWTStatelessUserAuthentication
 from rest_framework_simplejwt.models import TokenUser
 
+from apps.feed.audit import set_current_actor_id
+
 
 class AtlasTokenUser(TokenUser):
-    """TokenUser estendido para expor os claims usados pela aplicação."""
-
     @property
     def user_id(self):
         return str(self.id)
 
     @property
     def role(self):
-        return self.token.get("role", "")
+        return self.token.get('role', '')
 
     @property
     def email(self):
-        return self.token.get("email", "")
+        return self.token.get('email', '')
 
     @property
     def is_staff(self):
-        # Claim opcional (tokens antigos não o têm) — default False.
-        return bool(self.token.get("is_staff", False))
+        return bool(self.token.get('is_staff', False))
 
 
 class AtlasJWTAuthentication(JWTStatelessUserAuthentication):
-    """Autenticação JWT stateless — não consulta banco nem o auth-service."""
+    def authenticate(self, request):
+        result = super().authenticate(request)
+        if result is not None:
+            set_current_actor_id(result[0].id)
+        return result
