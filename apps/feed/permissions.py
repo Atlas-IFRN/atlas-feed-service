@@ -28,6 +28,17 @@ def is_teacher(user):
         getattr(user, 'is_staff', False)
 
 
+class IsTeacher(BasePermission):
+    """Permite acesso somente a usuários autenticados com papel de professor."""
+
+    message = "Apenas professores podem acessar este recurso."
+
+    def has_permission(self, request, view):
+        user = request.user
+        role = str(getattr(user, 'role', '') or '').upper()
+        return bool(user and user.is_authenticated and role == 'TEACHER')
+
+
 class IsTeacherOrReadOnly(BasePermission):
     """Leitura liberada para qualquer autenticado; escrita só para docentes/staff."""
 

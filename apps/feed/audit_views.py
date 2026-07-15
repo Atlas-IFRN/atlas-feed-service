@@ -3,6 +3,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from .audit_serializers import AuditLogSerializer
 from .models import AuditLog
+from .permissions import IsTeacher
 
 
 class AuditLogPagination(pagination.PageNumberPagination):
@@ -12,7 +13,7 @@ class AuditLogPagination(pagination.PageNumberPagination):
 
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTeacher]
     serializer_class = AuditLogSerializer
     pagination_class = AuditLogPagination
 
